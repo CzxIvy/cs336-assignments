@@ -283,9 +283,9 @@ class BasicsTransformerLM(nn.Module):
         if x.dim() == 1:
             x = x.unsqueeze(0)
         
-        original_sequence_length = x.shape(-1)
+        original_sequence_length = x.shape[-1]
         for _ in range(max_new_tokens):
-            x = x[:, -self.context_length:] if x.shape(-1) > self.context_length else x
+            x = x[:, -self.context_length:] if x.shape[-1] > self.context_length else x
             logits = self.forward(x)
             next_token_logits = logits[:, -1]
             temperature_scaled_logits = next_token_logits / temperature

@@ -20,8 +20,8 @@ train_txt_data_path = os.path.join(data_dir, 'TinyStoriesV2-GPT4-train.txt')
 valid_txt_data_path = os.path.join(data_dir, 'TinyStoriesV2-GPT4-valid.txt')
 train_data_path = os.path.join(data_dir, 'train.dat')
 valid_data_path = os.path.join(data_dir, 'valid.dat')
-temp_dir = os.path.join(data_dir, 'temp')
-os.makedirs(temp_dir, exist_ok=True)
+train_temp_dir = os.path.join(data_dir, 'train_temp')
+valid_temp_dir = os.path.join(data_dir, 'valid_temp')
 
 special_tokens = ['<|endoftext|>']
 
@@ -59,7 +59,7 @@ def parallel_encode_file(filename, temp_dir, save_path, special_tokens):
     os.makedirs(temp_dir, exist_ok=True)
     
     with open(filename, "rb") as f:
-        num_processes = 12
+        num_processes = 16
         boundaries = find_chunk_boundaries(f, num_processes, b"<|endoftext|>")
         
         with multiprocessing.Pool(processes=num_processes) as pool:
@@ -88,7 +88,7 @@ def parallel_encode_file(filename, temp_dir, save_path, special_tokens):
         tokens_mm = np.memmap(save_path, mode='w+', dtype=dtype, shape=(total_tokens,))
         
         pos = 0
-        for temp_file in sorted(all_temp_files):  # 按chunk顺序排序
+        for temp_file in sorted(all_temp_files, key=lambda x: int(x.split('_')[-1].split('.')[0])):  # 按chunk顺序排序
             with open(temp_file, 'r') as f:
                 for line in f:
                     line = line.strip()
@@ -99,8 +99,6 @@ def parallel_encode_file(filename, temp_dir, save_path, special_tokens):
         
         tokens_mm.flush()
     
-    # 删除临时目录
-    os.rmdir(temp_dir)
     print(f"Encoded data saved to {save_path}")
 
 if __name__ == '__main__':
@@ -125,4 +123,5 @@ if __name__ == '__main__':
         print("解码:", decoded)
         print("是否完全还原:", decoded == text)
         
-    parallel_encode_file(train_txt_data_path, temp_dir, train_data_path, special_tokens)
+    # parallel_encode_file(train_txt_data_path, train_temp_dir, train_data_path, special_tokens)
+    parallel_encode_file(valid_txt_data_path, valid_temp_dir, valid_data_path, special_tokens)
