@@ -30,7 +30,7 @@ def get_batch(memmap_arr, batch_size, context_length):
     )
     inputs = np.stack([memmap_arr[start_idx:start_idx+context_length] for start_idx in start_idxs])
     labels = np.stack([memmap_arr[start_idx+1:start_idx+context_length+1] for start_idx in start_idxs])
-    return torch.from_numpy(inputs).to(device), torch.from_numpy(labels).to(device)
+    return torch.from_numpy(inputs).to(device).long(), torch.from_numpy(labels).to(device).long()
 
 def memmap_val_iterator(memmap_arr, batch_size, context_length):
     start_num = (len(memmap_arr)-context_length-1) // batch_size
@@ -38,7 +38,7 @@ def memmap_val_iterator(memmap_arr, batch_size, context_length):
         start = i*batch_size
         inputs = np.stack([memmap_arr[i:i+context_length] for i in range(start, start+batch_size)])
         labels = np.stack([memmap_arr[i+1:i+context_length+1] for i in range(start, start+batch_size)])
-        yield torch.from_numpy(inputs).to(device), torch.from_numpy(labels).to(device)
+        yield torch.from_numpy(inputs).to(device).long(), torch.from_numpy(labels).to(device).long()
         
 if __name__ == '__main__':
     # 1. 导入数据集和配置
@@ -88,7 +88,7 @@ if __name__ == '__main__':
         
         optimizer.zero_grad()
         loss.backward()
-        run_gradient_clipping(parameters=model.parameters, max_l2_norm=args.clip_grad_norm)
+        run_gradient_clipping(parameters=list(model.parameters()), max_l2_norm=args.clip_grad_norm)
         
         lr = run_get_lr_cosine_schedule(
             it=iter,
@@ -101,23 +101,23 @@ if __name__ == '__main__':
             param_group['lr'] = lr
         optimizer.step()
         
-        if (iter+1) % args.val_internal == 0:
+        if (iter+1) % args.val_interval == 0:
             model.eval()
             with torch.no_grad():
-                val_losses = []
+                val_losses_list = []
                 count = 0
                 for x_val, y_val in memmap_val_iterator(valid_data, args.batch_size, args.context_length):
-                    x_val, y_val = x_val.to(device), y_val.to(dei=device)
+                    x_val, y_val = x_val.to(device), y_val.to(device)
                     val_logits = model(x_val)
                     val_losses = run_cross_entropy(
                         inputs=val_logits.reshape(-1, logits.shape[-1]),
                         targets=y_val.reshape(-1)
                     )
-                    val_losses.append(val_losses.item())
+                    val_losses_list.append(val_losses.item())
                     count += 1
                     if count >= args.val_batches:
                         break
-                val_loss_mean = np.mean(val_losses)
+                val_loss_mean = np.mean(val_losses_list)
                 print(f'iter {iter:05d}: VALID loss = {val_loss_mean:.4f}')
                 
         if (iter+1) % args.save_interval == 0:
