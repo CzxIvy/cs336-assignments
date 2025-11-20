@@ -17,10 +17,10 @@ special_tokens = ['<|endoftext|>']
 
 device = 'cuda'
 
-with open(vocab_path, 'r') as f:
-    vocab = pickle.load(vocab_path)
-with open(merges_path, 'r') as f:
-    merges = pickle.load(merges_path)
+with open(vocab_path, 'rb') as f:
+    vocab = pickle.load(f)
+with open(merges_path, 'rb') as f:
+    merges = pickle.load(f)
     
 tokenizer = Tokenizer(
     vocab=vocab,
@@ -28,7 +28,7 @@ tokenizer = Tokenizer(
     special_tokens=special_tokens,
 )
 
-ckpt_path = pathlib.Path(__file__).resolve().parent / 'checkpoints/ckpt_iter5000.pt'
+ckpt_path = pathlib.Path(__file__).resolve().parent / 'checkpoints/ckpt_iter6000.pt'
 config_path = pathlib.Path(__file__).resolve().parent / 'config.json'
 
 def main():
@@ -44,7 +44,7 @@ def main():
     model = BasicsTransformerLM(**config['model'])
     model.to(device)
     
-    with open(ckpt_path, 'r') as f:
+    with open(ckpt_path, 'rb') as f:
         checkpoint = torch.load(f, weights_only=False)
     
     model.load_state_dict(checkpoint['model_checkpoint'])
