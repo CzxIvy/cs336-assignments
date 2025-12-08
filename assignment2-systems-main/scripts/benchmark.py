@@ -3,10 +3,13 @@ import os
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
-cs336_dir = os.path.join(parent_dir, 'cs-336')
+cs336_dir = os.path.join(parent_dir, 'cs336-basics')
 sys.path.insert(0, cs336_dir)
 
-from cs_336 import *
+import cs336_basics
+# 确保包内的子模块被加载，这样可以通过 `cs336_basics.model` 和 `cs336_basics.nn_utils` 访问
+import cs336_basics.model
+import cs336_basics.nn_utils
 import argparse
 import time
 import timeit
@@ -14,6 +17,36 @@ import torch
 import torch.nn as nn
 import numpy as np
 from typing import Optional, Tuple
+from torch import Tensor
+from jaxtyping import Float, Bool
+from einops import rearrange, einsum
+import math
+import torch.cuda.nvtx as nvtx
+
+@nvtx.range("scaled dot product attention")
+def annotated_scaled_dot_product_attention(
+    Q: Float[Tensor, " ... queries d_k"],
+    K: Float[Tensor, " ... keys    d_k"],
+    V: Float[Tensor, " ... keys    d_v"],
+    mask: Bool[Tensor, " ... queries keys"] | None = None,
+) -> Float[Tensor, " ... queries d_v"]:
+    d_k = K.shape[-1]
+
+    with nvtx.range("computing attention scores"):
+        attention_scores = einsum(Q, K, "... query d_k, ... key d_k -> ... query key") / math.sqrt(d_k)
+
+    if mask is not None:
+        attention_scores = torch.where(mask, attention_scores, float("-inf"))
+
+    with nvtx.range("computing softmax"):
+        attention_weights = cs336_basics.nn_utils.softmax(attention_scores, dim=-1)  # Softmax over the key dimension
+
+    with nvtx.range("final matmul"):
+        result = einsum(attention_weights, V, "... query key, ... key d_v ->  ... query d_v")
+    
+    return result
+
+cs336_basics.model.scaled_dot_product_attention = annotated_scaled_dot_product_attention
 
 def benchmark_model(
         model: nn.Module,
@@ -69,7 +102,7 @@ def benchmark_model(
         # 反向传播
         if do_backward:
             targets = torch.randint(0, vocab_size, (batch_size, seq_len), device=device)
-            loss = nn.utils.cross_entropy(logits.reshape(-1, logits.shape[-1]), targets.reshape(-1))
+            loss = cs336_basics.nn_utils.cross_entropy(logits.reshape(-1, logits.shape[-1]), targets.reshape(-1))
 
             torch.cuda.synchronize()
             start_time_backward = timeit.default_timer()
@@ -114,7 +147,7 @@ def benchmark_model(
         # 反向传播
         if do_backward:
             targets = torch.randint(0, vocab_size, (batch_size, seq_len), device=device)
-            loss = nn.utils.cross_entropy(logits.reshape(-1, logits.shape[-1]), targets.reshape(-1))
+            loss = cs336_basics.nn_utils.cross_entropy(logits.reshape(-1, logits.shape[-1]), targets.reshape(-1))
 
             torch.cuda.synchronize()
             start_time_backward = timeit.default_timer()
@@ -192,7 +225,7 @@ def main():
 
     # 初始化模型
     print("初始化模型...")
-    model = model.BasicsTransformerLM(
+    model = cs336_basics.model.BasicsTransformerLM(
         vocab_size = args.vocab_size,
         context_length = args.seq_len,
         d_model = args.d_model,
