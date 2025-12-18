@@ -31,6 +31,26 @@ def run_tokenize_prompt_and_output(
             "response_mask": torch.Tensor of shape (batch_size, max(prompt_and_output_lens) - 1):
                 a mask on the response tokens in `labels`.
     """
+    prompt_and_output_strs = [p + o for p, o in zip(prompt_strs, output_strs)]
+    tokenized = tokenizer(
+        prompt_and_output_strs,
+        padding=True,
+        truncation=True,
+        max_length=tokenizer.model_max_length,
+        return_tensors="pt",
+    )
+    input_ids = tokenized["input_ids"]
+    labels = input_ids.clone()
+    response_mask = labels.clone()
+    response_mask[:, :-1] = labels[:, 1:]
+    response_mask[:, -1] = 0
+
+    return {
+        "input_ids": input_ids[:, :-1],
+        "labels": labels[:, :-1],
+        "response_mask": response_mask[:, :-1],
+    }
+
     raise NotImplementedError
 
 
