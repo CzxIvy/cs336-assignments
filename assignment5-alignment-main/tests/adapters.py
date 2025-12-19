@@ -31,27 +31,36 @@ def run_tokenize_prompt_and_output(
             "response_mask": torch.Tensor of shape (batch_size, max(prompt_and_output_lens) - 1):
                 a mask on the response tokens in `labels`.
     """
-    prompt_and_output_strs = [p + o for p, o in zip(prompt_strs, output_strs)]
-    tokenized = tokenizer(
-        prompt_and_output_strs,
-        padding=True,
-        truncation=True,
-        max_length=tokenizer.model_max_length,
-        return_tensors="pt",
-    )
-    input_ids = tokenized["input_ids"]
-    labels = input_ids.clone()
-    response_mask = labels.clone()
-    response_mask[:, :-1] = labels[:, 1:]
-    response_mask[:, -1] = 0
+    prompt_tokens = [tokenizer.encode(p, add_special_tokens=False) for p in prompt_strs]
+    output_tokens = [tokenizer.encode(o, add_special_tokens=False) for o in output_strs]
+    prompt_and_output_tokens = [p + o for p, o in zip(prompt_tokens, output_tokens)]
+    max_len = max(len(t) for t in prompt_and_output_tokens)
+
+    input_ids = []
+    labels = []
+    response_mask = []
+
+    for pt, ot in zip(prompt_tokens, output_tokens):
+        ids = pt + ot
+        pad_len = max_len - len(ids)
+        ids_padded = ids + [tokenizer.pad_token_id] * pad_len
+        labels_padded = ids_padded[1:] + [tokenizer.pad_token_id]
+        mask = [False] * max(len(pt-1), 0) + [True] * len(ot) + [False] * (pad_len+1)
+
+        input_ids.append(ids_padded[:-1])
+        labels.append(labels_padded[:-1])
+        response_mask.append(mask[:-1])
+        
+
+    input_ids = torch.tensor(input_ids)
+    labels = torch.tensor(labels)
+    response_mask = torch.tensor(response_mask, dtype=torch.bool)
 
     return {
-        "input_ids": input_ids[:, :-1],
-        "labels": labels[:, :-1],
-        "response_mask": response_mask[:, :-1],
+        "input_ids": input_ids,
+        "labels": labels,
+        "response_mask": response_mask,
     }
-
-    raise NotImplementedError
 
 
 def run_compute_group_normalized_rewards(
