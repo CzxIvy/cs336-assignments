@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from math import exp
 import os
 from typing import Any, Callable, Literal
 
 import torch
-from torch import Tensor
+import torch.nn.functional as F
+from torch import Tensor, logsumexp
 from torch.utils.data import Dataset
 from transformers import PreTrainedTokenizerBase
 
@@ -45,7 +47,7 @@ def run_tokenize_prompt_and_output(
         pad_len = max_len - len(ids)
         ids_padded = ids + [tokenizer.pad_token_id] * pad_len
         labels_padded = ids_padded[1:] + [tokenizer.pad_token_id]
-        mask = [False] * max(len(pt-1), 0) + [True] * len(ot) + [False] * (pad_len+1)
+        mask = [False] * max(len(pt) - 1, 0) + [True] * len(ot) + [False] * (pad_len + 1)
 
         input_ids.append(ids_padded[:-1])
         labels.append(labels_padded[:-1])
@@ -111,7 +113,9 @@ def run_compute_group_normalized_rewards(
 
 def run_compute_entropy(logits: torch.Tensor) -> torch.Tensor:
     """Get the entropy of the logits (i.e., entropy of the final dimension)."""
-    raise NotImplementedError
+    probs = torch.softmax(logits, dim=-1)
+    lse = torch.logsumexp(logits, dim=-1)
+    return lse - torch.sum(probs * logits, dim=-1)
 
 
 def run_get_response_log_probs(
@@ -143,7 +147,14 @@ def run_get_response_log_probs(
                 we have not masked out the token indices corresponding to the prompt
                 or padding; that is done in the train loop.
     """
-    raise NotImplementedError
+    logits = model(input_ids).logits
+    log_probs = F.log_softmax(logits, dim=-1)
+    log_probs = log_probs.gather(dim=-1, index=labels.unsqueeze(-1)).squeeze(-1)
+    out = {"log_probs": log_probs}
+    if return_token_entropy:
+        token_entropy = run_compute_entropy(logits)
+        out["token_entropy"] = token_entropy
+    return out
 
 
 def run_compute_naive_policy_gradient_loss(
@@ -232,7 +243,16 @@ def run_sft_microbatch_train_step(
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
     """Compute the policy gradient loss and backprop its gradients for a microbatch.
     """
-    raise NotImplementedError
+    per_sample_loss = run_masked_normalize(
+        tensor=-policy_log_probs,
+        mask=response_mask,
+        dim=-1,
+        normalize_constant=normalize_constant
+    )
+
+    loss = per_sample_loss.mean() / gradient_accumulation_steps
+    loss.backward()
+    return loss, {}
 
     
 def run_grpo_microbatch_train_step(
@@ -296,7 +316,12 @@ def run_masked_normalize(
         torch.Tensor, the normalized sum, where masked elements
             (mask=0) don't contribute to the sum.
     """
-    raise NotImplementedError
+    masked_tensor = tensor * mask
+    if dim is None:
+        masked_sum = masked_tensor.sum()
+    else:
+        masked_sum = masked_tensor.sum(dim=dim)
+    return masked_sum / normalize_constant
 
 
 """
