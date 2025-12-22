@@ -10,10 +10,11 @@ from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from vllm import LLM, SamplingParams
 from unittest.mock import patch
+import pathlib
 
 # Import helper functions from your local package (assumed structure based on assignment)
 # You must have implemented these in the previous problems.
-from cs336_alignment.adapters import (
+from tests.adapters import (
     run_tokenize_prompt_and_output,
     run_get_response_log_probs,
     run_sft_microbatch_train_step,
@@ -21,8 +22,14 @@ from cs336_alignment.adapters import (
     run_compute_entropy
 )
 from cs336_alignment.drgrpo_grader import r1_zero_reward_fn
+from data_utils import *
 
 app = typer.Typer()
+
+CUR_DIR = pathlib.Path(__file__).resolve()
+ROOT_DIR = pathlib.Path(__file__).resolve().parent.parent
+DATA_DIR = ROOT_DIR / "data" / "gsm8k"
+MODEL_DIR = ROOT_DIR / "model"
 
 # --- vLLM Helper Functions (Source: PDF Page 13-14) ---
 
@@ -67,6 +74,7 @@ def load_data(data_path: str, dataset_size: Optional[int] = None, filter_correct
     with open(data_path, 'r', encoding='utf-8') as f:
         data = [json.loads(line.strip()) for line in f]
     
+    """
     # Filter for correctness if requested (Part 2 of experiment)
     if filter_correct:
         print(f"Filtering dataset for correctness... Initial size: {len(data)}")
@@ -89,6 +97,7 @@ def load_data(data_path: str, dataset_size: Optional[int] = None, filter_correct
         
         data = filtered_data
         print(f"Filtered size: {len(data)}")
+    """
 
     # Shuffle and subsample (Part 1 of experiment)
     if dataset_size is not None and dataset_size < len(data):
@@ -112,8 +121,8 @@ def evaluate_vllm(llm: LLM, validation_path: str, num_eval_examples: int = 500):
     if len(val_data) > num_eval_examples:
         val_data = val_data[:num_eval_examples]
     
-    prompts = [ex['prompt'] for ex in val_data] # Ensure prompts are formatted for r1_zero
-    ground_truths = [ex.get('solution') or ex.get('answer') for ex in val_data]
+    prompts = [format_r1_zero_prompt(ex['question']) for ex in val_data] # Ensure prompts are formatted for r1_zero
+    ground_truths = [ex.get('solution').split("####", 1)[-1] or ex.get('answer').split("####", 1)[-1] for ex in val_data]
     
     # [cite_start]Sampling params: temp 1.0, max_tokens 1024, stop at </answer> [cite: 141-144]
     sampling_params = SamplingParams(
@@ -148,8 +157,8 @@ def log_generations(llm: LLM, validation_data: List[dict], step: int, num_exampl
     
     # Randomly sample examples
     examples = random.sample(validation_data, min(num_examples, len(validation_data)))
-    prompts = [ex['prompt'] for ex in examples]
-    ground_truths = [ex.get('solution') or ex.get('answer') for ex in examples]
+    prompts = [format_r1_zero_prompt(ex['question']) for ex in examples] # Ensure prompts are formatted for r1_zero
+    ground_truths = [ex.get('solution').split("####", 1)[-1] or ex.get('answer').split("####", 1)[-1] for ex in examples]
     
     # Sampling parameters for generation
     # Note: vLLM usually needs logprobs=1 to calculate entropy, 
@@ -221,10 +230,10 @@ def log_generations(llm: LLM, validation_data: List[dict], step: int, num_exampl
 
 @app.command()
 def train(
-    dataset_path: str = "/data/a5-alignment/MATH/sft.jsonl",
-    validation_path: str = "/data/a5-alignment/MATH/validation.jsonl",
-    model_path: str = "/data/a5-alignment/models/Qwen2.5-Math-1.5B",
-    output_dir: str = "checkpoints/sft_run",
+    dataset_path: str = DATA_DIR / "train_convert.jsonl",
+    validation_path: str = DATA_DIR / "test.jsonl",
+    model_path: str = MODEL_DIR / "Qwen2.5-Math-1.5B",
+    output_dir: str = CUR_DIR / "checkpoints/sft_run",
     dataset_size: int = typer.Option(None, help="Number of examples to use (128, 256, etc.)"),
     filter_correct: bool = typer.Option(False, help="Filter dataset for only correct reasoning traces"),
     learning_rate: float = 1e-5,
@@ -259,6 +268,7 @@ def train(
 
     # 3. Load Data
     train_data = load_data(dataset_path, dataset_size, filter_correct)
+    val_data = load_data(validation_path, dataset_size, filter_correct)
     
     # [cite_start]4. Load Policy Model [cite: 190-196]
     print(f"Loading policy model on {policy_device}...")
