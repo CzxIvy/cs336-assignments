@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import random
 import torch
@@ -11,6 +12,13 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from vllm import LLM, SamplingParams
 from unittest.mock import patch
 import pathlib
+
+CUR_DIR = pathlib.Path(__file__).resolve()
+ROOT_DIR = pathlib.Path(__file__).resolve().parent.parent
+DATA_DIR = ROOT_DIR / "data" / "gsm8k"
+MODEL_DIR = ROOT_DIR / "model"
+
+sys.path.append(str(ROOT_DIR))
 
 # Import helper functions from your local package (assumed structure based on assignment)
 # You must have implemented these in the previous problems.
@@ -25,11 +33,6 @@ from cs336_alignment.drgrpo_grader import r1_zero_reward_fn
 from data_utils import *
 
 app = typer.Typer()
-
-CUR_DIR = pathlib.Path(__file__).resolve()
-ROOT_DIR = pathlib.Path(__file__).resolve().parent.parent
-DATA_DIR = ROOT_DIR / "data" / "gsm8k"
-MODEL_DIR = ROOT_DIR / "model"
 
 # --- vLLM Helper Functions (Source: PDF Page 13-14) ---
 
@@ -318,7 +321,7 @@ def train(
             response_mask = tokenized['response_mask'].to(policy_device)
 
             # Forward pass
-            outputs = model(input_ids)
+            # outputs = model(input_ids)
             
             # [cite_start]Get Log Probs [cite: 290-305]
             log_probs_dict = run_get_response_log_probs(
